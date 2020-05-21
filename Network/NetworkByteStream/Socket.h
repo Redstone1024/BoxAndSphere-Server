@@ -3,23 +3,7 @@
 #include "../../Support/Utils.h"
 
 #include <string>
-
-#ifdef _WIN32
-#include <winsock2.h>
-#pragma comment(lib, "ws2_32.lib")
-typedef SOCKET HSocket;
-#endif
-
-#ifdef linux
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-
-typedef int HSocket;
-#define SOCKET_ERROR  (-1)
-#define INVALID_SOCKET  0
-#endif
-#include <iostream>
+#include <memory>
 
 struct InternetAddr
 {
@@ -58,22 +42,23 @@ enum class SocketStateParam : uint8_t
 class Socket
 {
 private:
-	HSocket Sock;
 
 #ifdef _WIN32
-	
-	struct WSAManager
-	{
-		WSADATA Data;
-		WSAManager() { WSAStartup(MAKEWORD(2, 2), &Data); }
-		~WSAManager() { WSACleanup(); }
-	};
 
-	static WSAManager WSA;
+	uint64_t Sock;
 
-#endif
+	Socket(uint64_t pSock);
 
-	Socket(HSocket pSock);
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	int Sock;
+
+	Socket(int pSock);
+
+#endif  // __linux__
+
 
 public:
 
@@ -104,8 +89,6 @@ public:
 	bool GetAddress(InternetAddr& OutAddr);
 
 	bool GetPeerAddress(InternetAddr& OutAddr);
-
-	bool SetNonBlocking(bool bIsNonBlocking = true);
 
 	SocketReturn HasState(SocketStateParam State, int WaitTimeMilli = 0);
 };

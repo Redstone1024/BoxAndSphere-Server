@@ -56,12 +56,12 @@ void Server::Run()
 
 	SocketThread = std::shared_ptr<std::thread>(new std::thread(&Server::SocketFunction, this));
 
-	std::pair<std::chrono::high_resolution_clock::time_point, std::chrono::high_resolution_clock::time_point> Timer;
+	std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point> Timer;
 	std::chrono::nanoseconds TheoryDifferenceTime(std::chrono::nanoseconds(std::chrono::seconds(1)) / Setting.FPS);
 	std::chrono::nanoseconds RealDifferenceTime;
 	while (!Stopping)
 	{
-		Timer.first = std::chrono::high_resolution_clock::now();
+		Timer.first = std::chrono::system_clock::now();
 
 		Log::Write("Main", "Tick [" + std::to_string(NowTickNum) + "]");
 
@@ -74,7 +74,7 @@ void Server::Run()
 
 		// 追加服务器Tick事件
 		// 第一字节表示服务器事件 第二字节表示是Tick事件 紧跟8字节为Tick序号
-		Events.push({ 0ui8, 'T', 
+		Events.push({ '\0', 'T', 
 			(uint8_t)(NowTickNum >>  0),
 			(uint8_t)(NowTickNum >>  8), 
 			(uint8_t)(NowTickNum >> 16), 
@@ -92,7 +92,7 @@ void Server::Run()
 		}
 
 		NowTickNum++;
-		Timer.second = std::chrono::high_resolution_clock::now();
+		Timer.second = std::chrono::system_clock::now();
 		RealDifferenceTime = std::chrono::duration_cast<std::chrono::milliseconds>(Timer.second - Timer.first);
 		std::this_thread::sleep_for(TheoryDifferenceTime - RealDifferenceTime);
 	}

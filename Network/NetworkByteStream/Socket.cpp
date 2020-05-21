@@ -1,30 +1,66 @@
 ﻿#include "Socket.h"	
 
+#ifdef _WIN32
+
+#include <winsock2.h>
+#pragma comment(lib, "ws2_32.lib")
+
 #pragma warning(disable:4996)
 #pragma warning(disable:4244)
 
-Socket::WSAManager Socket::WSA;
+#endif  // _WIN32
 
-Socket::Socket(HSocket pSock)
+#ifdef __linux__
+
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/ioctl.h>
+
+#define SOCKET_ERROR -1
+#define INVALID_SOCKET 0
+
+#endif  // __linux__
+
+#ifdef _WIN32
+
+struct WSAManager
+{
+	WSADATA Data;
+	WSAManager() { WSAStartup(MAKEWORD(2, 2), &Data); }
+	~WSAManager() { WSACleanup(); }
+	};
+
+WSAManager WSA;
+
+#endif  // _WIN32
+#ifdef _WIN32
+
+Socket::Socket(uint64_t pSock)
 	: Sock(pSock)
 { }
 
+#endif  // _WIN32
+
+#ifdef __linux__
+
+Socket::Socket(int pSock)
+	: Sock(pSock)
+{ }
+
+#endif  // __linux__
+
 Socket::Socket()
 {
-#ifdef _WIN32
-
 	Sock = socket(PF_INET, SOCK_STREAM, 0);
-
-#endif
 }
 
 Socket::~Socket()
 {
-#ifdef _WIN32
-
 	Close();
-
-#endif
 }
 
 bool Socket::Close()
@@ -35,37 +71,34 @@ bool Socket::Close()
 
 	return true;
 
-#endif
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	close(Sock);
+
+	return true;
+
+#endif // __linux__
 
 	return false;
 }
 
 bool Socket::Bind(const InternetAddr & Addr)
 {
-#ifdef _WIN32
-
-	SOCKADDR_IN SocketAddr;
+	sockaddr_in SocketAddr;
 
 	SocketAddr.sin_family = PF_INET;
 	SocketAddr.sin_port = htons(Addr.Port);
-	SocketAddr.sin_addr.s_addr = inet_addr(Addr.IP.c_str());
+	if (Addr.IP == "Default") SocketAddr.sin_addr.s_addr = INADDR_ANY;
+	else SocketAddr.sin_addr.s_addr = inet_addr(Addr.IP.c_str());
 
-	return bind(Sock, (SOCKADDR*)&SocketAddr, sizeof SocketAddr) != SOCKET_ERROR ? true : false;
-
-#endif
-
-	return false;
+	return bind(Sock, (sockaddr*)&SocketAddr, sizeof SocketAddr) != SOCKET_ERROR ? true : false;
 }
 
 bool Socket::Listen(int32_t MaxBacklog)
 {
-#ifdef _WIN32
-
 	return listen(Sock, MaxBacklog) != SOCKET_ERROR ? true : false;
-	
-#endif
-
-	return false;
 }
 
 bool Socket::HasPendingData(uint32_t & PendingDataSize)
@@ -84,18 +117,44 @@ bool Socket::HasPendingData(uint32_t & PendingDataSize)
 
 	return false;
 
-#endif
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	PendingDataSize = 0;
+
+	if (HasState(SocketStateParam::CanRead) == SocketReturn::Yes)
+	{
+		if (ioctl(Sock, FIONREAD, (u_long*)(&PendingDataSize)) == 0)
+		{
+			return (PendingDataSize > 0);
+		}
+	}
+
+	return false;
+
+#endif // __linux__
 
 	return false;
 }
 
 Socket * Socket::Accept(InternetAddr & OutAddr)
 {
+	sockaddr_in ClientAddr;
+
 #ifdef _WIN32
 
-	SOCKADDR_IN ClientAddr;
 	int ClientAddrLen = sizeof ClientAddr;
-	SOCKET NewSocket = accept(Sock, (SOCKADDR*)&ClientAddr, &ClientAddrLen);
+
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	socklen_t ClientAddrLen = sizeof ClientAddr;
+
+#endif // __linux__
+	
+	auto NewSocket = accept(Sock, (sockaddr*)&ClientAddr, &ClientAddrLen);
 
 	if (NewSocket != INVALID_SOCKET)
 	{
@@ -105,61 +164,48 @@ Socket * Socket::Accept(InternetAddr & OutAddr)
 	}
 
 	return nullptr;
-
-#endif
-
-	return nullptr;
 }
 
 bool Socket::Connect(InternetAddr Addr)
 {
-#ifdef _WIN32
-
-	SOCKADDR_IN SocketAddr;
+	sockaddr_in SocketAddr;
 
 	SocketAddr.sin_family = PF_INET;
 	SocketAddr.sin_port = htons(Addr.Port);
 	SocketAddr.sin_addr.s_addr = inet_addr(Addr.IP.c_str());
 
-	int Return = connect(Sock, (SOCKADDR*)&SocketAddr, sizeof SocketAddr);
+	int Return = connect(Sock, (sockaddr*)&SocketAddr, sizeof SocketAddr);
+#ifdef _WIN32
 
 	return ((Return == NO_ERROR) || (Return == EWOULDBLOCK) || (Return == EINPROGRESS));
 
-#endif
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	return Return == 0;
+
+#endif // __linux__
 
 	return false;
 }
 
 bool Socket::Send(const uint8_t * Data, int32_t Count, int32_t & BytesSent)
 {
-#ifdef _WIN32
-
 	BytesSent = send(Sock, (const char*)Data, Count, 0);
 
 	return BytesSent >= 0;
-
-#endif
-
-	return false;
 }
 
 bool Socket::Recv(uint8_t * Data, int32_t BufferSize, int32_t & BytesRead)
 {
-#ifdef _WIN32
-
 	BytesRead = recv(Sock, (char*)Data, BufferSize, 0);
 
 	return BytesRead >= 0;
-
-#endif
-
-	return false;
 }
 
 bool Socket::Wait(SocketWaitConditions Condition, int WaitTimeMilli)
 {
-#ifdef _WIN32
-
 	if ((Condition == SocketWaitConditions::WaitForRead) || (Condition == SocketWaitConditions::WaitForReadOrWrite))
 	{
 		if (HasState(SocketStateParam::CanRead, WaitTimeMilli) == SocketReturn::Yes)
@@ -177,16 +223,10 @@ bool Socket::Wait(SocketWaitConditions Condition, int WaitTimeMilli)
 	}
 
 	return false;
-
-#endif
-
-	return false;
 }
 
 SocketConnectionState Socket::GetConnectionState()
 {
-#ifdef _WIN32
-
 	SocketConnectionState CurrentState = SocketConnectionState::ConnectionError;
 
 	if (HasState(SocketStateParam::HasError) == SocketReturn::No)
@@ -202,68 +242,60 @@ SocketConnectionState Socket::GetConnectionState()
 	}
 
 	return CurrentState;
-
-#endif
-
-	return SocketConnectionState::ConnectionError;
 }
 
 bool Socket::GetAddress(InternetAddr & OutAddr)
 {
+	sockaddr_in ThisAddr;
+
 #ifdef _WIN32
 
-	SOCKADDR_IN ThisAddr;
 	int ThisAddrLen = sizeof ThisAddr;
+
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	socklen_t ThisAddrLen = sizeof ThisAddr;
+
+#endif // __linux__
 	
-	if (getsockname(Sock, (SOCKADDR*)&ThisAddr, &ThisAddrLen) == 0)
+	if (getsockname(Sock, (sockaddr*)&ThisAddr, &ThisAddrLen) == 0)
 	{
 		OutAddr.IP = inet_ntoa(ThisAddr.sin_addr);
 		OutAddr.Port = ntohs(ThisAddr.sin_port);
 		return true;
 	}
 	else return false;
-
-#endif
-
-	return false;
 }
 
 bool Socket::GetPeerAddress(InternetAddr & OutAddr)
 {
+	sockaddr_in ThisAddr;
+
 #ifdef _WIN32
 
-	SOCKADDR_IN ThisAddr;
 	int ThisAddrLen = sizeof ThisAddr;
 
-	if (getpeername(Sock, (SOCKADDR*)&ThisAddr, &ThisAddrLen) == 0)
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	socklen_t ThisAddrLen = sizeof ThisAddr;
+
+#endif // __linux__
+
+	if (getpeername(Sock, (sockaddr*)&ThisAddr, &ThisAddrLen) == 0)
 	{
 		OutAddr.IP = inet_ntoa(ThisAddr.sin_addr);
 		OutAddr.Port = ntohs(ThisAddr.sin_port);
 		return true;
 	}
 	else return false;
-
-#endif
-
-	return false;
-}
-
-bool Socket::SetNonBlocking(bool bIsNonBlocking)
-{
-#ifdef _WIN32
-
-	u_long Value = bIsNonBlocking ? true : false;
-	return ioctlsocket(Sock, FIONBIO, &Value) == 0;
-
-#endif
-
-	return false;
 }
 
 SocketReturn Socket::HasState(SocketStateParam State, int WaitTimeMilli)
 {
-#ifdef _WIN32
-
 	timeval Time;
 	Time.tv_sec = WaitTimeMilli / 1000;
 	Time.tv_usec = (WaitTimeMilli % 1000) * 1000;
@@ -294,8 +326,4 @@ SocketReturn Socket::HasState(SocketStateParam State, int WaitTimeMilli)
 	return SelectStatus > 0 ? SocketReturn::Yes :
 		SelectStatus == 0 ? SocketReturn::No :
 		SocketReturn::EncounteredError;
-
-#endif
-
-	return SocketReturn::EncounteredError;
 }

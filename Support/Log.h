@@ -23,7 +23,7 @@ struct ChannelInfo
 		Writer.open(Path);
 		if (!Writer)
 		{
-			throw std::exception(("File failed to open " + Path).c_str());
+			throw ("File failed to open " + Path).c_str();
 		}
 	}
 };

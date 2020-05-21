@@ -1,7 +1,10 @@
 #include "Log.h"
 
-#include <cstdio>
-#include <ctime>
+#include <iostream>
+#include <chrono>
+#include <iomanip>
+
+#pragma warning(disable:4996)
 
 const std::string Log::FileRxtension = ".log";
 
@@ -31,10 +34,7 @@ void Log::AddChannel(const std::string& ChannelName, const std::string& BaseFile
 	std::string Path = "Logs";
 	CreateDirectory(Path);
 
-	char* pFilename = new char[FilenameLength];
-	sprintf_s(pFilename, FilenameLength, "%s%s", BaseFilename.c_str(), FileRxtension.c_str());
-
-	std::string Filename(pFilename);
+	std::string Filename(BaseFilename + FileRxtension);
 	mChannels.insert(std::map<std::string, ChannelInfo>::value_type(ChannelName, ChannelInfo(Filename, IsTimestamped, Path + "/" + Filename)));
 	return;
 }
@@ -54,11 +54,16 @@ void Log::Write(const std::string& ChannelName, const std::string& Str, bool ToS
 	}
 	else
 	{
-		std::time_t tNow = std::time(0);
-		char* tTimeStr = new char[TimeStringLength];
-		ctime_s(tTimeStr, TimeStringLength, &tNow);
-		tTimeStr[strlen(tTimeStr) - 1] = '\0';
-		tOf << "[" << tTimeStr << "]" << Str << std::endl;
-		if (ToScreen) std::cout << "[" << tTimeStr << "]" << Str << std::endl;
+		std::chrono::system_clock::time_point n1 = std::chrono::system_clock::now();
+		std::time_t t = std::chrono::system_clock::to_time_t(n1);
+		tOf << "[" << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S") << " "
+			<< std::setw(4) << std::setfill('0')
+			<< std::chrono::time_point_cast<std::chrono::milliseconds>(n1).time_since_epoch().count() % 1000 << "] " 
+			<< Str << std::endl;
+
+		if (ToScreen) std::cout << "[" << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S") << " "
+			<< std::setw(4) << std::setfill('0')
+			<< std::chrono::time_point_cast<std::chrono::milliseconds>(n1).time_since_epoch().count() % 1000 << "] "
+			<< Str << std::endl;
 	}
 }

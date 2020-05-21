@@ -28,6 +28,7 @@ bool ConnectListener::Start()
 	if (ListenThread != nullptr && Listening) return true;
 	if (ListenThread != nullptr) Stop();
 	Stopping = false;
+
 	ListenSocket = std::shared_ptr<Socket>(new Socket());
 	if (!ListenSocket->Bind({ IP, Port })) return false;
 	Log::Write("Network", "ConnectListener Bind Success [" + IP + ":" + std::to_string(Port) + "]");

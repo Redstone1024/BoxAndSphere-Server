@@ -26,7 +26,7 @@ int MersenneTwister::Next()
 int MersenneTwister::Next(int Low, int High)
 {
 	if (High < Low)
-		throw std::exception("Maximum value is less than the minimum value.");
+		throw "Maximum value is less than the minimum value.";
 
 	int Diff = High - Low;
 	if (Diff <= 1)

@@ -2,6 +2,8 @@
 
 #include "../../Support/Utils.h"
 
+#include <memory>
+
 class ByteStream;
 
 /**
