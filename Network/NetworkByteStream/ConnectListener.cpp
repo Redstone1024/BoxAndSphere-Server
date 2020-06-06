@@ -30,7 +30,11 @@ bool ConnectListener::Start()
 	Stopping = false;
 
 	ListenSocket = std::shared_ptr<Socket>(new Socket());
-	if (!ListenSocket->Bind({ IP, Port })) return false;
+	if (!ListenSocket->Bind({ IP, Port }))
+	{
+		Log::Write("Network", "ConnectListener Bind Fail [" + IP + ":" + std::to_string(Port) + "]");
+		return false;
+	}
 	Log::Write("Network", "ConnectListener Bind Success [" + IP + ":" + std::to_string(Port) + "]");
 	ListenThread = std::shared_ptr<std::thread>(new std::thread(&ConnectListener::ListenFunction, this));
 	return true;
@@ -39,6 +43,7 @@ bool ConnectListener::Start()
 void ConnectListener::Stop()
 {
 	Stopping = true;
+	if (ListenSocket) ListenSocket->Shutdown();
 	if (ListenSocket) ListenSocket->Close();
 	if (ListenThread && ListenThread->joinable())
 		ListenThread->join();

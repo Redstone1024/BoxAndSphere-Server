@@ -84,6 +84,27 @@ bool Socket::Close()
 	return false;
 }
 
+bool Socket::Shutdown()
+{
+#ifdef _WIN32
+
+	shutdown(Sock, SD_BOTH);
+
+	return true;
+
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	shutdown(Sock, SHUT_RDWR);
+
+	return true;
+
+#endif // __linux__
+
+	return false;
+}
+
 bool Socket::Bind(const InternetAddr & Addr)
 {
 	sockaddr_in SocketAddr;
@@ -175,6 +196,7 @@ bool Socket::Connect(InternetAddr Addr)
 	SocketAddr.sin_addr.s_addr = inet_addr(Addr.IP.c_str());
 
 	int Return = connect(Sock, (sockaddr*)&SocketAddr, sizeof SocketAddr);
+
 #ifdef _WIN32
 
 	return ((Return == NO_ERROR) || (Return == EWOULDBLOCK) || (Return == EINPROGRESS));
@@ -192,7 +214,17 @@ bool Socket::Connect(InternetAddr Addr)
 
 bool Socket::Send(const uint8_t * Data, int32_t Count, int32_t & BytesSent)
 {
+#ifdef _WIN32
+
 	BytesSent = send(Sock, (const char*)Data, Count, 0);
+
+#endif  // _WIN32
+
+#ifdef __linux__
+
+	BytesSent = send(Sock, (const char*)Data, Count, MSG_NOSIGNAL);
+
+#endif // __linux__
 
 	return BytesSent >= 0;
 }

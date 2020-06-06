@@ -59,11 +59,13 @@ void Log::Write(const std::string& ChannelName, const std::string& Str, bool ToS
 		tOf << "[" << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S") << " "
 			<< std::setw(4) << std::setfill('0')
 			<< std::chrono::time_point_cast<std::chrono::milliseconds>(n1).time_since_epoch().count() % 1000 << "] " 
+			<< "[" << ChannelName << "] "
 			<< Str << std::endl;
 
 		if (ToScreen) std::cout << "[" << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S") << " "
 			<< std::setw(4) << std::setfill('0')
 			<< std::chrono::time_point_cast<std::chrono::milliseconds>(n1).time_since_epoch().count() % 1000 << "] "
+			<< "[" << ChannelName << "] "
 			<< Str << std::endl;
 	}
 }

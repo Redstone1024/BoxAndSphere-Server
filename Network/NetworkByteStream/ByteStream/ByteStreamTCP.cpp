@@ -16,6 +16,7 @@ void ByteStreamTCP::Recv(std::vector<uint8_t>& Data)
 	{
 		Data.resize(PendingDataSize);
 		Sock->Recv(Data.data(), PendingDataSize, BytesRead);
+		LastActiveTime = std::chrono::system_clock::now();
 	}
 	else Data.clear();
 }

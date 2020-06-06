@@ -1,102 +1,62 @@
 #include "Server.h"
 
-#include "Network/NetworkByteStream/Socket.h"
+#include "Round.h"
 #include "Support/Log.h"
-#include "Network/SocketHelper.h"
-#include "Player.h"
+#include "Network/NetworkByteStream/ByteStream.h"
+#include "Network/NetworkByteStream/BytesHelper.h"
+#include "Network/NetworkByteStream/ConnectListener.h"
+#include "Network/NetworkByteStream/ConnectMaker/ConnectMakerTCP.h"
 
 #include <chrono>
+#include <string>
 
 Server::Server(Arguments Arg)
 	: ServerArguments(Arg)
-	, Stopping(false)
-	, NowPlayerID(1)
-	, NowTickNum(0)
+	, TimeoutLimit(3)
 {
-	// 初始化服务器设置参数
-	Setting.NetAddr.IP = ServerArguments.GetValue("IP", "127.0.0.1");
-	Setting.NetAddr.Port = std::stoi(ServerArguments.GetValue("Port", "25567"));
-	Setting.FPS = std::stoi(ServerArguments.GetValue("FPS", "40"));
-	Setting.Description = ServerArguments.GetValue("Description", "Default");
+	Log::AddChannel("Server", "Server", true);
+
+	Setting.IP = ServerArguments.GetValue("IP", "Default");
+	Setting.Port = std::stoi(ServerArguments.GetValue("Port", "25565"));
+
+	AvailablePactsType AvailablePacts = 
+	{ 
+		std::shared_ptr<ConnectServerMaker>(new ConnectServerMakerTCP()),
+	};
+
+	Listener = std::shared_ptr<ConnectListener>(new ConnectListener(Setting.IP, Setting.Port, AvailablePacts));
 }
 
 Server::~Server()
 {
-	if (MainSocket)
-		MainSocket = nullptr;
-
 	Stopping = true;
-
-	if (SocketThread && SocketThread->joinable())
-		SocketThread->join();
-	SocketThread = nullptr;
-
-	for (auto x : Players)
-	{
-		x->Stopping = true;
-
-		if (x->Thread && x->Thread->joinable())
-			x->Thread->join();
-		x->Thread = nullptr;
-	}
-
 }
 
 void Server::Run()
 {
-	// 初始化Log通道
-	Log::AddChannel("Main", "Main", true);
-	Log::AddChannel("Socket", "Socket", true);
+	Log::Write("Server", "Server Open");
+	Listener->Start();
 
-	Log::Write("Main", "Initialize Complete!");
-
-	MainSocket = std::shared_ptr<Socket>(new Socket());
-	if (!MainSocket->Bind(Setting.NetAddr)) throw "Socket Bind Fail!";
-	Log::Write("Socket", "Main Socket Bind Complete!");
-
-	SocketThread = std::shared_ptr<std::thread>(new std::thread(&Server::SocketFunction, this));
-
-	std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point> Timer;
-	std::chrono::nanoseconds TheoryDifferenceTime(std::chrono::nanoseconds(std::chrono::seconds(1)) / Setting.FPS);
-	std::chrono::nanoseconds RealDifferenceTime;
+	std::shared_ptr<ByteStream> NewConnection;
 	while (!Stopping)
 	{
-		Timer.first = std::chrono::system_clock::now();
-
-		Log::Write("Main", "Tick [" + std::to_string(NowTickNum) + "]");
-
-		std::queue<std::vector<uint8_t>> Events;
-
+		do 
 		{
-			std::unique_lock<std::mutex> EventQueueLock(EventQueueMutex);
-			Events.swap(EventQueue);
-		}
+			NewConnection = Listener->TryGetConnection();
+			if (NewConnection) AddNewConnection(NewConnection);
+		} 
+		while (NewConnection);
 
-		// 追加服务器Tick事件
-		// 第一字节表示服务器事件 第二字节表示是Tick事件 紧跟8字节为Tick序号
-		Events.push({ '\0', 'T', 
-			(uint8_t)(NowTickNum >>  0),
-			(uint8_t)(NowTickNum >>  8), 
-			(uint8_t)(NowTickNum >> 16), 
-			(uint8_t)(NowTickNum >> 24), 
-			(uint8_t)(NowTickNum >> 32), 
-			(uint8_t)(NowTickNum >> 40), 
-			(uint8_t)(NowTickNum >> 48),
-			(uint8_t)(NowTickNum >> 56)
-			});
+		HandleConnection();
 
-		for (auto x : Players)
-		{
-			std::unique_lock<std::mutex> PlayerEventQueueLock(x->EventQueueMutex);
-			x->EventQueue.push(Events);
-		}
+		HandleRounds();
 
-		NowTickNum++;
-		Timer.second = std::chrono::system_clock::now();
-		RealDifferenceTime = std::chrono::duration_cast<std::chrono::milliseconds>(Timer.second - Timer.first);
-		std::this_thread::sleep_for(TheoryDifferenceTime - RealDifferenceTime);
 	}
 
+	Listener->Stop();
+	CloseRounds();
+
+	Log::Write("Server", "Server Close");
 }
 
 void Server::Stop()
@@ -104,37 +64,157 @@ void Server::Stop()
 	Stopping = true;
 }
 
-void Server::SocketFunction()
+void Server::AddNewConnection(std::shared_ptr<ByteStream> NewConnection)
 {
-	int32_t BytesNum;
-	InternetAddr ClientAddr;
-	std::shared_ptr<Socket> ClientSocket;
-	std::vector<uint8_t> Data;
-	while (!Stopping)
+	ProcConnection NewProcConnection;
+	NewProcConnection.Stream = NewConnection;
+	ProcConnections[++NextConnectionID] = NewProcConnection;
+	Log::Write("Server", "New Customers Join [" +  std::to_string(NextConnectionID) + "]");
+}
+
+void Server::HandleConnection()
+{
+	// F 表示协议错误
+	ToRemoveConnections.clear();
+	for (auto Connection : ProcConnections)
 	{
-		MainSocket->Listen(0);
-		ClientSocket = std::shared_ptr<Socket>(MainSocket->Accept(ClientAddr));
 
-		if (ClientSocket)
+		bool HasData = false;
+		do
 		{
-			if (SocketHelper::SendWithTimeout(ClientSocket, { (uint8_t)(NowPlayerID >> 0), (uint8_t)(NowPlayerID >> 8) }, BytesNum)
-				&& SocketHelper::RecvWithTimeout(ClientSocket, Data, BytesNum))
+			NewMessageBuffer.clear();
+			Connection.second.Stream->Recv(NewMessageBuffer);
+			if (!NewMessageBuffer.empty())
 			{
-				std::shared_ptr<Player> NewPlayer = std::shared_ptr<Player>(new Player);
-				NewPlayer->ID = NowPlayerID;
-				NewPlayer->Description = SocketHelper::ArrayToString(Data);
-				NewPlayer->OwnSocket = ClientSocket;
-				NewPlayer->Stopping = false;
-				NewPlayer->Thread = std::shared_ptr<std::thread>(new std::thread(&Server::PlayerFunction, this, NewPlayer));
+				Connection.second.Message.insert(Connection.second.Message.end(), NewMessageBuffer.begin(), NewMessageBuffer.end());
+				HasData = true;
+			}
+		} while (!NewMessageBuffer.empty());
 
-				Players.push_back(NewPlayer);
+		if (HasData)
+		{
+			Connection.second.Message.insert(Connection.second.Message.end(), NewMessageBuffer.begin(), NewMessageBuffer.end());
+
+			std::vector<uint8_t>& Message = Connection.second.Message;
+			if (Message.size() == 17)
+			{
+				RoundPass NewRoundPass;
+				NewRoundPass.RoundNumber = BYTESTOINT64(Message.data() + 1);
+				NewRoundPass.Password = BYTESTOINT64(Message.data() + 9);
+
+				if (Message[0] == 'R')
+					RegisterRound(NewRoundPass, Connection.second.Stream, Connection.first);
+				else if (Message[0] == 'L')
+					JoinRound(NewRoundPass, Connection.second.Stream, Connection.first);
+				else
+				{
+					Log::Write("Server", "Customers Unknown Command [" + std::to_string(Connection.first) + "]");
+					Connection.second.Stream->Send({ 'F' });
+				}
+
+				ToRemoveConnections.push_back(Connection.first);
+			}
+			else if (Message.size() > 17)
+			{
+				ToRemoveConnections.push_back(Connection.first);
+				Connection.second.Stream->Send({ 'F' });
+				Log::Write("Server", "Customers Params Too Long [" + std::to_string(Connection.first) + "]");
 			}
 		}
+		else
+		{
+			std::chrono::system_clock::time_point NewTime = std::chrono::system_clock::now();
+			std::chrono::seconds RealDifferenceTime = std::chrono::duration_cast<std::chrono::seconds>(NewTime - Connection.second.Stream->GetLastActiveTime());
+			if (RealDifferenceTime > TimeoutLimit)
+			{
+				ToRemoveConnections.push_back(Connection.first);
+				Connection.second.Stream->Send({ 'F' });
+				Log::Write("Server", "Customers Connection Timeout [" + std::to_string(Connection.first) + "]");
+			}
+		}
+	}
 
-		ClientSocket = nullptr;
+	for (auto ID : ToRemoveConnections)
+	{
+		ProcConnections.erase(ID);
+		Log::Write("Server", "Customers Connection Removed [" + std::to_string(ID) + "]");
 	}
 }
 
-void Server::PlayerFunction(std::weak_ptr<class Player> Owner)
+void Server::RegisterRound(RoundPass Pass, std::shared_ptr<ByteStream> Stream, unsigned int ConnectionID)
 {
+	// K 表示房间已经存在
+	if (Rounds.find(Pass.RoundNumber) == Rounds.end())
+	{
+		Stream->Send({ 'T' });
+		RoundInfo NewRound;
+		NewRound.Self = std::shared_ptr<Round>(new Round(Pass));
+		NewRound.Self->AddByteStream(Stream, ConnectionID);
+		NewRound.Thread = std::shared_ptr<std::thread>(new std::thread(&Round::Run, NewRound.Self.get()));
+		Rounds[Pass.RoundNumber] = NewRound;
+		Log::Write("Server", "Round Construct [" + std::to_string(Pass.RoundNumber) + "]");
+		Log::Write("Server", "Connection [" + std::to_string(ConnectionID) + "] Join To Round [" + std::to_string(Pass.RoundNumber) + "] Succeed");
+	}
+	else
+	{
+		Stream->Send({ 'K' });
+		Log::Write("Server", "Connection [" + std::to_string(ConnectionID) + "] Join To Round [" + std::to_string(Pass.RoundNumber) + "] Fail (The Round Is Already Registered)");
+	}
+}
+
+void Server::JoinRound(RoundPass Pass, std::shared_ptr<ByteStream> Stream, unsigned int ConnectionID)
+{
+	// I 表示房间不存在
+	// P 表示密码错误
+	// T 表示连接成功
+	if (Rounds.find(Pass.RoundNumber) != Rounds.end())
+	{
+		if (Rounds.at(Pass.RoundNumber).Self->GetPass().Password == Pass.Password)
+		{
+			Stream->Send({ 'T' });
+			Rounds.at(Pass.RoundNumber).Self->AddByteStream(Stream, ConnectionID);
+			Log::Write("Server", "Connection [" + std::to_string(ConnectionID) + "] Join To Round [" + std::to_string(Pass.RoundNumber) + "] Succeed");
+		}
+		else
+		{
+			Stream->Send({ 'P' });
+			Log::Write("Server", "Connection [" + std::to_string(ConnectionID) + "] Join To Round [" + std::to_string(Pass.RoundNumber) + "] Fail (Wrong Password)");
+		}
+	}
+	else
+	{
+		Stream->Send({ 'I' });
+		Log::Write("Server", "Connection [" + std::to_string(ConnectionID) + "] Join To Round [" + std::to_string(Pass.RoundNumber) + "] Fail (The Round Not Registered)");
+	}
+}
+
+void Server::HandleRounds()
+{
+	ToRemoveRounds.clear();
+	for (auto tRound : Rounds)
+	{
+		if (tRound.second.Self->IsDestroyed())
+		{
+			if (tRound.second.Thread->joinable())
+				tRound.second.Thread->join();
+			ToRemoveRounds.push_back(tRound.first);
+		}
+	}
+
+	for (auto ToRemoveRound : ToRemoveRounds)
+	{
+		Rounds.erase(ToRemoveRound);
+		Log::Write("Server", "Round Destroyed [" + std::to_string(ToRemoveRound) + "]");
+	}
+}
+
+void Server::CloseRounds()
+{
+	for (auto tRound : Rounds)
+	{
+		tRound.second.Self->Stop();
+		if (tRound.second.Thread->joinable())
+			tRound.second.Thread->join();
+	}
+	Rounds.clear();
 }

@@ -4,13 +4,14 @@
 
 #include "Server.h"
 
+#include <thread>
+
 #include <iostream>
 #include "Network/NetworkByteStream/ConnectMaker/ConnectMakerTCP.h"
 #include <string>
 #include "Network/NetworkByteStream/ByteStream.h"
 #include "Network/NetworkByteStream/ConnectListener.h"
 #include <memory>
-#include <thread>
 #include "Network/NetworkByteStream/BytesHelper.h"
 #include <memory.h>
 
@@ -35,8 +36,21 @@ void PrintInt32(std::shared_ptr<ByteStream> Stream)
 	}
 }
 
+void CMDListener(Server* S)
+{
+	std::string Str;
+	while (!S->IsStopping())
+	{
+		std::cin >> Str;
+		if (Str == "Stop")
+			S->Stop();
+		else std::cout << "Unknown Command" << std::endl;
+	}
+}
+
 int main(int argc, char *argv[])
 {
+	/*
 	int x;
 	std::string Str;
 	std::vector<uint8_t> Data;
@@ -129,10 +143,12 @@ int main(int argc, char *argv[])
 			Thread->join();
 		Thread = nullptr;
 	}
-
-	/*
-	Server S(Arguments(argc, argv));
-	S.Run();
 	*/
+	
+	Server S(Arguments(argc, argv));
+	std::thread Listener(&CMDListener, &S);
+	S.Run();
+	if (Listener.joinable())
+		Listener.join();
 	return 0;
 }

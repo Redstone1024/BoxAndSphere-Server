@@ -68,6 +68,8 @@ public:
 
 	bool Close();
 
+	bool Shutdown();
+
 	bool Bind(const InternetAddr& Addr);
 
 	bool Listen(int32_t MaxBacklog);

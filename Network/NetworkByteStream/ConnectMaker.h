@@ -20,6 +20,8 @@ class ConnectClientMaker
 {
 public:
 	virtual std::shared_ptr<ByteStream> Construct(const std::string& IP, unsigned short Port, uint8_t Pact = 0 /* 此处与服务器部分ID相同 */) = 0;
+
+	virtual ~ConnectClientMaker() { }
 };
 
 class ConnectServerMaker
@@ -27,4 +29,6 @@ class ConnectServerMaker
 public:
 	virtual uint8_t GetPactID() { return 0 /* 此处与客户端部分ID相同 */ ; }
 	virtual std::shared_ptr<ByteStream> Construct(std::shared_ptr<class Socket> Sock) = 0;
+
+	virtual ~ConnectServerMaker() { }
 };
