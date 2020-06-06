@@ -41,16 +41,17 @@ private:
 	uint32_t TickCount = 0;
 	uint8_t FPS = 30;
 	
+	void Tick();
 	void SetFPS(uint8_t NewFPS);
 
 private:
 	uint32_t NextID = 0;
+	std::vector<uint8_t> MessageTemp;
 	std::vector<uint8_t> MessageStream;
-	std::queue<std::vector<uint8_t>> MessageQueue;
 
 	std::vector<uint8_t> EventMessage;
 
-	void AddEvent(const Event& NewEvent);
+	void SendEvent(const Event& NewEvent);
 
 private:
 	struct ByteStreamInfo
@@ -61,7 +62,6 @@ private:
 	};
 
 	std::chrono::seconds TimeoutLimit;
-	std::vector<uint8_t> NewMessageBuffer;
 	std::vector<unsigned int> ToRemoveByteStreams;
 	std::map<unsigned int, ByteStreamInfo> ByteStreams;
 
@@ -69,7 +69,6 @@ private:
 	std::vector<std::pair<unsigned int, std::shared_ptr<class ByteStream>>> ToAddByteStreams;
 
 	void HandleNewByteStream();
-	void HandleByteStreamSend();
 	void HandleByteStreamRecv();
 
 };

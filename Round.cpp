@@ -27,30 +27,24 @@ void Round::Run()
 {
 	Log::Write(LogChannel, "Round Begin");
 
-	std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point> Timer;
 	std::chrono::nanoseconds TheoryDifferenceTime(std::chrono::nanoseconds(std::chrono::seconds(1)) / FPS);
 	std::chrono::nanoseconds RealDifferenceTime;
 
+	std::chrono::system_clock::time_point LastTickTime = std::chrono::system_clock::now();
+	std::chrono::system_clock::time_point NowTime;
+
 	while (!Stopping && !(ByteStreams.empty() && ToAddByteStreams.empty()))
 	{
-		Timer.first = std::chrono::system_clock::now();
-
 		HandleNewByteStream();
 		HandleByteStreamRecv();
 
-		Event TickEvent;
-		TickEvent.ID = NextID++;
-		TickEvent.CMD = 1;
-		TickEvent.Params = { INT32TOBYTES(TickCount) };
-		AddEvent(TickEvent);
-
-		TickCount++;
-
-		HandleByteStreamSend();
-
-		Timer.second = std::chrono::system_clock::now();
-		RealDifferenceTime = std::chrono::duration_cast<std::chrono::milliseconds>(Timer.second - Timer.first);
-		std::this_thread::sleep_for(TheoryDifferenceTime - RealDifferenceTime);		
+		NowTime = std::chrono::system_clock::now();
+		RealDifferenceTime = std::chrono::duration_cast<std::chrono::milliseconds>(NowTime - LastTickTime);
+		if (RealDifferenceTime >= TheoryDifferenceTime)
+		{
+			Tick();
+			LastTickTime = NowTime - (RealDifferenceTime - TheoryDifferenceTime);
+		}
 	}
 
 	Log::Write(LogChannel, "Round End");
@@ -69,6 +63,17 @@ void Round::AddByteStream(std::shared_ptr<class ByteStream> Stream, unsigned int
 	ToAddByteStreams.push_back(std::pair<unsigned int, std::shared_ptr<class ByteStream>>(ID, Stream));
 }
 
+void Round::Tick()
+{
+	Event TickEvent;
+	TickEvent.ID = NextID++;
+	TickEvent.CMD = 1;
+	TickEvent.Params = { INT32TOBYTES(TickCount) };
+	SendEvent(TickEvent);
+
+	TickCount++;
+}
+
 void Round::SetFPS(uint8_t NewFPS)
 {
 	if (NewFPS == 0)
@@ -80,20 +85,23 @@ void Round::SetFPS(uint8_t NewFPS)
 	FPS = NewFPS;
 }
 
-void Round::AddEvent(const Event & NewEvent)
+void Round::SendEvent(const Event & NewEvent)
 {
-	EventMessage = { INT32TOBYTES(NewEvent.ID), INT32TOBYTES(NewEvent.CMD), INT32TOBYTES(NewEvent.Params.size()) };
-	EventMessage.insert(EventMessage.end(), NewEvent.Params.begin(), NewEvent.Params.end());
+	MessageTemp = { INT32TOBYTES(NewEvent.ID), INT32TOBYTES(NewEvent.CMD), INT32TOBYTES(NewEvent.Params.size()) };
+	MessageTemp.insert(MessageTemp.end(), NewEvent.Params.begin(), NewEvent.Params.end());
 
 	uint8_t tCheck = 0;
-	for (auto Byte : EventMessage)
+	for (auto Byte : MessageTemp)
 		tCheck ^= Byte;
 
-	EventMessage.push_back(tCheck);
+	MessageTemp.push_back(tCheck);
 
-	MessageQueue.push(EventMessage);
+	MessageStream.insert(MessageStream.end(), MessageTemp.begin(), MessageTemp.end());
+	
+	for (auto Connection : ByteStreams)
+		Connection.second.Stream->Send(MessageTemp);
 
-	EventMessage.clear();
+	MessageTemp.clear();
 }
 
 void Round::HandleNewByteStream()
@@ -111,28 +119,6 @@ void Round::HandleNewByteStream()
 	ToAddByteStreams.clear();
 }
 
-void Round::HandleByteStreamSend()
-{
-	if (!MessageQueue.empty())
-	{
-		for (auto Connection : ByteStreams)
-		{
-			std::queue<std::vector<uint8_t>> tMessageQueue = MessageQueue;
-			while (!tMessageQueue.empty())
-			{
-				Connection.second.Stream->Send(tMessageQueue.front());
-				tMessageQueue.pop();
-			}
-		}
-
-		while (!MessageQueue.empty())
-		{
-			MessageStream.insert(MessageStream.end(), MessageQueue.front().begin(), MessageQueue.front().end());
-			MessageQueue.pop();
-		}
-	}
-}
-
 void Round::HandleByteStreamRecv()
 {
 	ToRemoveByteStreams.clear();
@@ -141,15 +127,15 @@ void Round::HandleByteStreamRecv()
 		bool HasData = false;
 		do 
 		{
-			NewMessageBuffer.clear();
-			Connection.second.Stream->Recv(NewMessageBuffer);
-			if (!NewMessageBuffer.empty())
+			MessageTemp.clear();
+			Connection.second.Stream->Recv(MessageTemp);
+			if (!MessageTemp.empty())
 			{
-				Connection.second.Message.insert(Connection.second.Message.end(), NewMessageBuffer.begin(), NewMessageBuffer.end());
+				Connection.second.Message.insert(Connection.second.Message.end(), MessageTemp.begin(), MessageTemp.end());
 				HasData = true;
 			}
 		}
-		while (!NewMessageBuffer.empty());
+		while (!MessageTemp.empty());
 
 		if (HasData)
 		{
@@ -192,7 +178,7 @@ void Round::HandleByteStreamRecv()
 				}
 
 				if (NewEvent.CMD >= 16)
-					AddEvent(NewEvent);
+					SendEvent(NewEvent);
 
 				NextMessageIndex += 12 + ParamsLen + 1;
 			}
