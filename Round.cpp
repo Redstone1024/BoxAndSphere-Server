@@ -45,6 +45,8 @@ void Round::Run()
 			Tick();
 			LastTickTime = NowTime - (RealDifferenceTime - TheoryDifferenceTime);
 		}
+
+		std::this_thread::sleep_for(std::chrono::nanoseconds(std::chrono::seconds(1)) / (FPS * 1000));
 	}
 
 	Log::Write(LogChannel, "Round End");
@@ -66,7 +68,6 @@ void Round::AddByteStream(std::shared_ptr<class ByteStream> Stream, unsigned int
 void Round::Tick()
 {
 	Event TickEvent;
-	TickEvent.ID = NextID++;
 	TickEvent.CMD = 1;
 	TickEvent.Params = { INT32TOBYTES(TickCount) };
 	SendEvent(TickEvent);
@@ -87,7 +88,8 @@ void Round::SetFPS(uint8_t NewFPS)
 
 void Round::SendEvent(const Event & NewEvent)
 {
-	MessageTemp = { INT32TOBYTES(NewEvent.ID), INT32TOBYTES(NewEvent.CMD), INT32TOBYTES(NewEvent.Params.size()) };
+	uint32_t NowID = NextID++;
+	MessageTemp = { INT32TOBYTES(NowID), INT32TOBYTES(NewEvent.CMD), INT32TOBYTES(NewEvent.Params.size()) };
 	MessageTemp.insert(MessageTemp.end(), NewEvent.Params.begin(), NewEvent.Params.end());
 
 	uint8_t tCheck = 0;
@@ -160,8 +162,6 @@ void Round::HandleByteStreamRecv()
 					break;
 				}
 
-				NewEvent.ID = NextID++;
-
 				NewEvent.CMD = BYTESTOINT32(Message.data() + NextMessageIndex + 4);
 				NewEvent.Params.assign(Message.begin() + NextMessageIndex + 12, Message.begin() + NextMessageIndex + 12 + ParamsLen);
 				NewEvent.Check = Message[NextMessageIndex + 12 + ParamsLen];
@@ -201,16 +201,3 @@ void Round::HandleByteStreamRecv()
 		Log::Write(LogChannel, "Customers Connection Removed [" + std::to_string(ID) + "]");
 	}
 }
-
-/*
-	std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point> Timer;
-	std::chrono::nanoseconds TheoryDifferenceTime(std::chrono::nanoseconds(std::chrono::seconds(1)) / Setting.FPS);
-	std::chrono::nanoseconds RealDifferenceTime;
-
-		Timer.first = std::chrono::system_clock::now();
-
-		Timer.second = std::chrono::system_clock::now();
-		RealDifferenceTime = std::chrono::duration_cast<std::chrono::milliseconds>(Timer.second - Timer.first);
-		std::this_thread::sleep_for(TheoryDifferenceTime - RealDifferenceTime);
-
-*/

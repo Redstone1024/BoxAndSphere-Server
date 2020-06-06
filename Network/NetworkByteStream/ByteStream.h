@@ -18,7 +18,7 @@ public:
 	virtual ~ByteStream() { }
 
 	virtual void Send(const std::vector<uint8_t>& Data) = 0;
-	virtual void Recv(std::vector<uint8_t>& Data) = 0;
+	virtual void Recv(std::vector<uint8_t>& Data, uint32_t MaxBytesRead = UINT32_MAX) = 0;
 	virtual void Update() { }
 
 	virtual std::chrono::system_clock::time_point GetLastActiveTime() = 0;

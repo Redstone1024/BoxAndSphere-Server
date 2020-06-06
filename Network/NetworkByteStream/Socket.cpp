@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
 
@@ -120,6 +121,12 @@ bool Socket::Bind(const InternetAddr & Addr)
 bool Socket::Listen(int32_t MaxBacklog)
 {
 	return listen(Sock, MaxBacklog) != SOCKET_ERROR ? true : false;
+}
+
+bool Socket::SetNoDelay(bool bIsNoDelay)
+{
+	int Param = bIsNoDelay ? 1 : 0;
+	return setsockopt(Sock, IPPROTO_TCP, TCP_NODELAY, (char*)&Param, sizeof(Param)) == 0;
 }
 
 bool Socket::HasPendingData(uint32_t & PendingDataSize)

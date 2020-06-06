@@ -51,6 +51,7 @@ void Server::Run()
 
 		HandleRounds();
 
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
 	Listener->Stop();
@@ -83,7 +84,7 @@ void Server::HandleConnection()
 		do
 		{
 			NewMessageBuffer.clear();
-			Connection.second.Stream->Recv(NewMessageBuffer);
+			Connection.second.Stream->Recv(NewMessageBuffer, 17 - Connection.second.Message.size());
 			if (!NewMessageBuffer.empty())
 			{
 				Connection.second.Message.insert(Connection.second.Message.end(), NewMessageBuffer.begin(), NewMessageBuffer.end());

@@ -74,6 +74,8 @@ public:
 
 	bool Listen(int32_t MaxBacklog);
 
+	bool SetNoDelay(bool bIsNoDelay = true);
+
 	bool HasPendingData(uint32_t& PendingDataSize);
 
 	class Socket* Accept(InternetAddr& OutAddr);
