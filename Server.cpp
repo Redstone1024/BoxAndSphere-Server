@@ -14,11 +14,14 @@ Server::Server(Arguments Arg)
 	: ServerArguments(Arg)
 	, TimeoutLimit(3)
 {
+	// 添加Log通道
 	Log::AddChannel("Server", "Server", true);
 
+	// 解析服务器设置
 	Setting.IP = ServerArguments.GetValue("IP", "Default");
 	Setting.Port = std::stoi(ServerArguments.GetValue("Port", "25565"));
 
+	// 启动监听者
 	AvailablePactsType AvailablePacts = 
 	{ 
 		std::shared_ptr<ConnectServerMaker>(new ConnectServerMakerTCP()),
@@ -29,7 +32,7 @@ Server::Server(Arguments Arg)
 
 Server::~Server()
 {
-	Stopping = true;
+	Stop();
 }
 
 void Server::Run()
@@ -40,6 +43,7 @@ void Server::Run()
 	std::shared_ptr<ByteStream> NewConnection;
 	while (!Stopping)
 	{
+		// 获取新的连接并加入处理池
 		do 
 		{
 			NewConnection = Listener->TryGetConnection();
@@ -47,10 +51,13 @@ void Server::Run()
 		} 
 		while (NewConnection);
 
+		// 处理连接
 		HandleConnection();
 
+		// 处理回合
 		HandleRounds();
 
+		// 休眠一会减少服务器CPU占用
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
@@ -69,7 +76,7 @@ void Server::AddNewConnection(std::shared_ptr<ByteStream> NewConnection)
 {
 	ProcConnection NewProcConnection;
 	NewProcConnection.Stream = NewConnection;
-	ProcConnections[++NextConnectionID] = NewProcConnection;
+	ProcConnections[++NextConnectionID] = NewProcConnection; // 拿到一个未使用的连接ID
 	Log::Write("Server", "New Customers Join [" +  std::to_string(NextConnectionID) + "]");
 }
 
@@ -79,7 +86,7 @@ void Server::HandleConnection()
 	ToRemoveConnections.clear();
 	for (auto Connection : ProcConnections)
 	{
-
+		// 获取新消息并追加到消息缓冲
 		bool HasData = false;
 		do
 		{
@@ -94,11 +101,15 @@ void Server::HandleConnection()
 
 		if (HasData)
 		{
+			// 处理新的消息
+
 			Connection.second.Message.insert(Connection.second.Message.end(), NewMessageBuffer.begin(), NewMessageBuffer.end());
 
 			std::vector<uint8_t>& Message = Connection.second.Message;
 			if (Message.size() == 17)
 			{
+				// 满足处理条件开始处理
+
 				RoundPass NewRoundPass;
 				NewRoundPass.RoundNumber = BYTESTOINT64(Message.data() + 1);
 				NewRoundPass.Password = BYTESTOINT64(Message.data() + 9);
@@ -113,21 +124,18 @@ void Server::HandleConnection()
 					Connection.second.Stream->Send({ 'F' });
 				}
 
+				// 处理完成删除该连接
 				ToRemoveConnections.push_back(Connection.first);
-			}
-			else if (Message.size() > 17)
-			{
-				ToRemoveConnections.push_back(Connection.first);
-				Connection.second.Stream->Send({ 'F' });
-				Log::Write("Server", "Customers Params Too Long [" + std::to_string(Connection.first) + "]");
 			}
 		}
 		else
 		{
+			// 查看连接是否超时
 			std::chrono::system_clock::time_point NewTime = std::chrono::system_clock::now();
 			std::chrono::seconds RealDifferenceTime = std::chrono::duration_cast<std::chrono::seconds>(NewTime - Connection.second.Stream->GetLastActiveTime());
 			if (RealDifferenceTime > TimeoutLimit)
 			{
+				// 超时则删除
 				ToRemoveConnections.push_back(Connection.first);
 				Connection.second.Stream->Send({ 'F' });
 				Log::Write("Server", "Customers Connection Timeout [" + std::to_string(Connection.first) + "]");
@@ -135,6 +143,7 @@ void Server::HandleConnection()
 		}
 	}
 
+	// 真正删除连接的地方
 	for (auto ID : ToRemoveConnections)
 	{
 		ProcConnections.erase(ID);
@@ -191,6 +200,7 @@ void Server::JoinRound(RoundPass Pass, std::shared_ptr<ByteStream> Stream, unsig
 
 void Server::HandleRounds()
 {
+	// 将已经过期的回合删除
 	ToRemoveRounds.clear();
 	for (auto tRound : Rounds)
 	{

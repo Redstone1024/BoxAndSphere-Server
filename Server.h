@@ -32,54 +32,57 @@
 class Server
 {
 private:
-	bool Stopping = false;
+	bool Stopping = false; // 标记是否开始停止
 
-	Arguments ServerArguments;
-	ServerSetting Setting;
+	// 服务器设置
+	Arguments ServerArguments; // 原CMD参数
+	ServerSetting Setting;     // 解析后的参数
 
-	std::shared_ptr<class ConnectListener> Listener;
+	std::shared_ptr<class ConnectListener> Listener; // 监听器
 
 public:
 	Server(Arguments Arg);
 
 	~Server();
 
-	void Run();
+	void Run(); // 主函数
 
-	void Stop();
+	void Stop(); // 外部线程请求中途结束
 
-	bool IsStopping() const { return Stopping; }
+	bool IsStopping() const { return Stopping; } // 正在停止吗
 
 private:
+	// 表示一个待处理的连接
 	struct ProcConnection
 	{
-		std::shared_ptr<class ByteStream> Stream;
-		std::vector<uint8_t> Message;
+		std::shared_ptr<class ByteStream> Stream; // 流对象
+		std::vector<uint8_t> Message;             // 已经接受到的消息
 	};
 
-	unsigned int NextConnectionID = 0;
-	std::map<unsigned int, ProcConnection> ProcConnections;
+	unsigned int NextConnectionID = 0;                      // 下一个连接者拥有的编号
+	std::map<unsigned int, ProcConnection> ProcConnections; // 连接者池
 
-	std::chrono::seconds TimeoutLimit;
-	std::vector<uint8_t> NewMessageBuffer;
-	std::vector<unsigned int> ToRemoveConnections;
+	std::chrono::seconds TimeoutLimit;             // 超时时限
+	std::vector<uint8_t> NewMessageBuffer;         // 消息暂存缓冲
+	std::vector<unsigned int> ToRemoveConnections; // 在处理结尾需要被删除的连接
 
-	void AddNewConnection(std::shared_ptr<class ByteStream> NewConnection);
-	void HandleConnection();
+	void AddNewConnection(std::shared_ptr<class ByteStream> NewConnection); // 添加一个新的连接
+	void HandleConnection();                                                // 处理所有连接
 
 private:
+	// 表示一个回合信息
 	struct RoundInfo
 	{
-		std::shared_ptr<class Round> Self;
-		std::shared_ptr<std::thread> Thread;
+		std::shared_ptr<class Round> Self;   // 回合对象
+		std::shared_ptr<std::thread> Thread; // 回合线程
 	};
 
-	std::map<uint64_t, RoundInfo> Rounds;
-	std::vector<uint64_t> ToRemoveRounds;
+	std::map<uint64_t, RoundInfo> Rounds; // 回合信息池
+	std::vector<uint64_t> ToRemoveRounds; // 在处理结尾需要被删除的回合
 
-	void RegisterRound(RoundPass Pass, std::shared_ptr<class ByteStream> Stream, unsigned int ConnectionID);
-	void JoinRound(RoundPass Pass, std::shared_ptr<class ByteStream> Stream, unsigned int ConnectionID);
-	void HandleRounds();
-	void CloseRounds();
+	void RegisterRound(RoundPass Pass, std::shared_ptr<class ByteStream> Stream, unsigned int ConnectionID); // 注册一个新的回合
+	void JoinRound(RoundPass Pass, std::shared_ptr<class ByteStream> Stream, unsigned int ConnectionID);     // 加入一个已经存在的回合
+	void HandleRounds();                                                                                     // 处理回合
+	void CloseRounds();                                                                                      // 关闭所有回合
 
 };
