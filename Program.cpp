@@ -2,8 +2,10 @@
 
 #include "Server.h"
 
+#include <string>
 #include <thread>
 #include <iostream>
+#include <algorithm>
 
 // 控制台命令监听
 void CMDListener(Server* S)
@@ -12,7 +14,9 @@ void CMDListener(Server* S)
 	while (!S->IsStopping())
 	{
 		std::cin >> Str;
-		if (Str == "Stop")
+		std::transform(Str.begin(), Str.end(), Str.begin(), ::toupper);
+
+		if (Str == "STOP")
 			S->Stop();
 		else std::cout << "Unknown Command" << std::endl;
 	}
