@@ -85,7 +85,7 @@ void ConnectListener::ListenFunction()
 		ClientSock = std::shared_ptr<Socket>(ListenSocket->Accept(ClientAddr));
 		Log::Write("Network", "ConnectListener Accept [" + ClientAddr.IP + ":" + std::to_string(ClientAddr.Port) + "]");
 
-		if (ClientSock != nullptr)
+		if (ClientSock != nullptr && !Stopping)
 		{
 			if (!ClientSock->Wait(SocketWaitConditions::WaitForRead, 1000))
 			{
