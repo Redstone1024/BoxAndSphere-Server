@@ -195,6 +195,8 @@ void Round::HandleByteStreamRecv()
 				// 如果不是系统事件则转发
 				if (NewEvent.CMD >= 16)
 					SendEvent(NewEvent);
+				else
+					HandlingSystemEvent(NewEvent, Connection.first);
 
 				NextMessageIndex += 12 + ParamsLen + 1;
 			}
@@ -218,5 +220,38 @@ void Round::HandleByteStreamRecv()
 	{
 		ByteStreams.erase(ID);
 		Log::Write(LogChannel, "Customers Connection Removed [" + std::to_string(ID) + "]");
+	}
+}
+
+void Round::HandlingSystemEvent(Event & NewEvent, unsigned int ByteStreamID)
+{
+	switch (NewEvent.CMD)
+	{
+	case 0: // 空事件忽略
+		break;
+	case 1: // Tick事件 不应该由客户端发送
+	case 2: // 客户端申请在服务器打印Log
+	{
+		std::string Str;
+		for (auto Byte : NewEvent.Params)
+			Str += Byte;
+		Log::Write(LogChannel, "Client Log : \"" + Str + "\" [" + std::to_string(ByteStreamID) + "]");
+		break;
+	}
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
+	case 11:
+	case 12:
+	case 13:
+	case 14:
+	case 15:
+		Log::Write(LogChannel, "Unknown system event [" + std::to_string(NewEvent.ID) + "]");
+		break;
 	}
 }

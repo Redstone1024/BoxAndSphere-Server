@@ -69,4 +69,7 @@ private:
 	void HandleNewByteStream();  // 处理待异步加入的客户端
 	void HandleByteStreamRecv(); // 处理接收到消息
 
+private:
+	void HandlingSystemEvent(Event& NewEvent, unsigned int ByteStreamID); // 处理接收到消息
+
 };
